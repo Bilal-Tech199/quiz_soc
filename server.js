@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const app = express();
 const cors = require("cors");
+const { addSocketId, removeSocketId, addScore ,sendQuizStartNotification} = require("./database");
 require("dotenv").config();
 app.use(
   cors({
@@ -19,6 +20,19 @@ const io = require("socket.io")(server, {
 io.on("connection", (socket) => {
   console.log(`Student connected: ${socket.id}`);
 
+  socket.on("add_socket_id", async (data) => {
+    const { studentId } = data;
+    await addSocketId({ socketId: socket.id, studentId });
+  });
+
+  socket.on("sendAnswer", async (data) => {
+    await addScore(data);
+  });
+
+  socket.on("sendQuizStartNotification", async (data) => {
+    await sendQuizStartNotification(data);
+  });
+
   socket.on("sendQuizDetails", (data) => {
     socket.broadcast.emit("getQuizDetails", data);
   });
@@ -35,15 +49,15 @@ io.on("connection", (socket) => {
     socket.broadcast.emit("deleteQuestion", data);
   });
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
     console.log(`Student disconnected: ${socket.id}`);
+    await removeSocketId({ socketId: socket.id });
   });
 });
 
-
-app.get('/',(req,res)=>{
-  res.send('Server is running...')
-})
+app.get("/", (req, res) => {
+  res.send("Server is running...");
+});
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
