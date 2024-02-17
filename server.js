@@ -10,6 +10,10 @@ app.use(
   })
 );
 
+
+const totalConnetedUsers=0;
+
+
 const server = http.createServer(app);
 const io = require("socket.io")(server, {
   cors: {
@@ -19,6 +23,8 @@ const io = require("socket.io")(server, {
 
 io.on("connection", (socket) => {
   console.log(`Student connected: ${socket.id}`);
+  ++totalConnetedUsers;
+  io.emit('getUsersCount',totalConnetedUsers )
 
   socket.on("add_socket_id", async (data) => {
     const { studentId } = data;
@@ -51,6 +57,8 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", async () => {
     console.log(`Student disconnected: ${socket.id}`);
+    --totalConnetedUsers;
+    io.emit('getUsersCount',totalConnetedUsers )
     await removeSocketId({ socketId: socket.id });
   });
 });
