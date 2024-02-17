@@ -1,5 +1,5 @@
 const { createPool } = require("mysql");
-const mysql2 = require("mysql2/promise");
+// const mysql2 = require("mysql2/promise");
 const admin = require("firebase-admin");
 const serviceAccount = require("./quizapp-eadce-firebase-adminsdk-k5dwa-fc34db0138.json");
 admin.initializeApp({
