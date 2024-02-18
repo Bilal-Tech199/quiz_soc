@@ -1,11 +1,17 @@
 const { createPool } = require("mysql");
-// const mysql2 = require("mysql2/promise");
 const admin = require("firebase-admin");
 const serviceAccount = require("./quizapp-eadce-firebase-adminsdk-k5dwa-fc34db0138.json");
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: "https://hiyab-afa75-default-rtdb.firebaseio.com",
 });
+
+// const pool = createPool({
+//   host: "localhost",
+//   user: "root",
+//   database: "tecxoulsoft_quiz",
+//   password: "",
+// });
 
 const pool = createPool({
   host: "localhost",
@@ -15,29 +21,28 @@ const pool = createPool({
 });
 
 const UPDATE_USER_SOCKET_ID = "UPDATE users SET ? WHERE id = ?";
-const REMOVE_USER_SOCKET_ID = "UPDATE users SET ? WHERE socketId = ?";
+const REMOVE_USER_SOCKET_ID = "UPDATE users SET ? WHERE socket_id = ?";
 const SELECT_FILTERED_SCORE =
   "SELECT * FROM scores WHERE std_id=? AND quiz_id=? AND ques_id=? ";
 const INSERT_SCORE = "INSERT INTO scores SET ?";
 const UPDATE_SCORE = "UPDATE scores SET ? WHERE id = ?";
-const SELECT_FILTERED_OPTION =
-  "SELECT_FILTERED_OPTIONSELECT * FROM options WHERE id=? AND quiz_id=? AND ques_id=? ";
-const SELECT_OFFLINE_USERS = " SELECT * FROM users WHERE socketId=?";
-
+const SELECT_FILTERED_OPTION = "SELECT * FROM options WHERE id=?";
+const SELECT_OFFLINE_USERS = " SELECT * FROM users WHERE socket_id IS NULL";
 const SELECT_FILTERED_OPTION_BY_QUESTION_ID =
   "SELECT * FROM options WHERE question_id=?";
 
   const INSERT_ANSWER_IN_TEMPS="INSERT INTO temps SET ?";
 
+
+
 const addScore = async (data) => {
   const { std_id, quiz_id, ques_id, option_id, number} = data;
-
+  
   pool.query(
     SELECT_FILTERED_SCORE,
     [std_id, quiz_id, ques_id],
     (error, results, fields) => {
       if (error) throw error;
-      console.log(results[0]);
       if (!results[0]) {
         insertScore(data);
       } else {
@@ -50,7 +55,7 @@ const addScore = async (data) => {
 const addSocketId = async (data) => {
   pool.query(
     UPDATE_USER_SOCKET_ID,
-    [{ socketId: data.socketId }, data.studentId],
+    [{ socket_id: data.socketId }, data.studentId],
     (error, results, fields) => {
       if (error) throw error;
       console.log(results);
@@ -60,7 +65,7 @@ const addSocketId = async (data) => {
 const removeSocketId = async (data) => {
   pool.query(
     REMOVE_USER_SOCKET_ID,
-    [{ socketId: null }, data.socketId],
+    [{ socket_id: null }, data.socketId],
     (error, results, fields) => {
       if (error) throw error;
       console.log(results);
@@ -70,38 +75,39 @@ const removeSocketId = async (data) => {
 
 const sendQuizStartNotification = async (data) => {
   const { message, title } = data;
-  pool.query(SELECT_OFFLINE_USERS, [null], (error, results, fields) => {
+  pool.query(SELECT_OFFLINE_USERS, (error, results, fields) => {
     if (error) throw error;
-
     if (results.length > 0) {
       results.forEach((user) => {
-        sendNotification(user.fcm_token, message, title);
+        if(user.fcm_token&&user.fcm_token!=null){
+          sendNotification(user.fcm_token, message, title);
+        }
       });
     }
   });
 };
 
 //=================== internal use mathods ===========================
-function insertScore(data) {
-  const score = 0;
-  if (getScore(data)) {
+async function insertScore(data) {
+  let score = 0;
+  if (await getScore(data)) {
     score = data.number;
   } else {
     addAnswerInTemp(data);
   }
   pool.query(
     INSERT_SCORE,
-    { ...data, created_at: new Date(), updated_at: new Date(), score },
+    {std_id:data.std_id, ques_id:data.ques_id,quiz_id:data.quiz_id,option_id:data.option_id, created_at: new Date(), updated_at: new Date(), score },
     (error, results, fields) => {
       if (error) throw error;
       console.log(results);
     }
   );
 }
-
-function updateScore(scoreId, data) {
-  const score = 0;
-  if (getScore(data)) {
+ 
+ async function updateScore(scoreId, data) {
+  let score = 0;
+  if (await getScore(data)) {
     score = data.number;
   }
   if (score > 0) {
@@ -112,17 +118,35 @@ function updateScore(scoreId, data) {
   }
 }
 
-function getScore(data) {
+async function getScore(data) {
+  let is_ans = false;
   const { std_id, quiz_id, ques_id, option_id } = data;
-  pool.query(
-    SELECT_FILTERED_OPTION,
-    [option_id, quiz_id, ques_id],
-    (error, results, fields) => {
-      if (error) throw error;
-      return results[0].is_ans == 1 || results[0].is_ans == true;
+  try {
+    const results = await new Promise((resolve, reject) => {
+      pool.query(
+        SELECT_FILTERED_OPTION,
+        [option_id],
+        (error, results, fields) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(results);
+          }
+        }
+      );
+    });
+
+    if (results[0].is_ans == 1) {
+      is_ans = true;
     }
-  );
+  } catch (error) {
+    console.error("Error in query:", error);
+    // Handle error appropriately
+  }
+
+  return is_ans;
 }
+
 
 function sendNotification(fcm_token, message, title) {
   const notificationMessage = {
@@ -171,7 +195,7 @@ function addAnswerInTemp(data) {
 
       if(!isAnswerExist){
         pool.query(
-          INSERT_SCORE,
+          INSERT_ANSWER_IN_TEMPS,
           { user_id:std_id, quiz_id, question_id:ques_id,option_id , created_at: new Date(), updated_at: new Date() },
           (error, results, fields) => {
             if (error) throw error;
